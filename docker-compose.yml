@@ -1,0 +1,222 @@
+# Run the ridgeback_autonav 2D simulator in ROS 2 Humble — no hardware, no Gazebo.
+#
+#   docker compose up --build sim                 # headless: "Go to Room 206"
+#   TASK="Go to Room 101" docker compose up sim   # pick another room
+#   docker compose exec sim ros2 topic echo /mission_status   # watch it (2nd shell)
+#   Ctrl-C / docker compose down                  # stop
+#
+#   --- SEE IT (recommended on macOS) ---
+#   docker compose up --build viz                 # sim + Foxglove bridge on :8765
+#   then open Foxglove Studio -> "Open connection" -> Foxglove WebSocket
+#        -> ws://localhost:8765   (set display frame = "map")
+#
+# Everything (sim + relay + mapping + nav + explorer + fake perception + mission)
+# runs inside the single container.
+services:
+  sim:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: ridgeback-autonav-sim:humble
+    # One container, one private DDS domain — isolated from anything else on the host.
+    environment:
+      ROS_DOMAIN_ID: "42"
+      RMW_IMPLEMENTATION: rmw_fastrtps_cpp
+    stdin_open: true   # keep STDIN open so node logs stream
+    tty: true          # allocate a TTY so Ctrl-C is forwarded cleanly
+    command: ["ros2", "launch", "ridgeback_autonav_sim", "sim.launch.py", "task:=${TASK:-Go to Room 206}"]
+
+    # --- Live-edit workflow (optional) ---------------------------------------
+    # Uncomment to mount your source over the image copy. After editing code you
+    # must rebuild the overlay inside the container:
+    #   docker compose run --rm sim bash -lc 'colcon build && source install/setup.bash && ros2 launch ridgeback_autonav_sim sim.launch.py'
+    # volumes:
+    #   - ./src:/ws/src:cached
+
+  # --- Visualize in Foxglove Studio (recommended on macOS) -------------------
+  # Runs the foxglove_bridge alongside the full sim. TF is published on the
+  # conventional /tf (instead of the robot's namespaced /r100_0140/tf) so the
+  # transform tree resolves in Foxglove without extra config.
+  #
+  #   docker compose up --build viz
+  #   Foxglove Studio -> Open connection -> Foxglove WebSocket -> ws://localhost:8765
+  #   In a 3D panel set "Display frame" = map, then add: Map (/sim_map or /map),
+  #   LaserScan (/scan), Markers (/frontiers, /sign_markers). Image panel: the
+  #   synthetic camera at /r100_0140/sensors/camera_0/color/image_raw.
+  viz:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: ridgeback-autonav-sim:humble
+    environment:
+      ROS_DOMAIN_ID: "42"
+      RMW_IMPLEMENTATION: rmw_fastrtps_cpp
+    ports:
+      - "8765:8765"   # Foxglove WebSocket
+    stdin_open: true
+    tty: true
+    # List form + literal block scalar so the task string (which contains spaces)
+    # survives the shell as a single argument. Bridge is backgrounded; the launch
+    # runs in the foreground and keeps the container alive.
+    command:
+      - bash
+      - -c
+      - |
+        ros2 run foxglove_bridge foxglove_bridge --ros-args -p port:=8765 -p address:=0.0.0.0 &
+        ros2 launch ridgeback_autonav_sim sim.launch.py tf_topic:=/tf tf_static_topic:=/tf_static task:="${TASK:-Go to Room 206}"
+
+  # --- Visualize in the browser with rosboard (no app, no X11) ---------------
+  # Runs the rosboard web server alongside the full sim. Open a browser at
+  # http://localhost:8888 and click topics in the left list to add tiles:
+  # /sim_map or /map (occupancy grid), /scan (laser), /frontiers + /sign_markers
+  # (markers), the camera at /r100_0140/sensors/camera_0/color/image_raw, and
+  # /mission_status (raw). No "fixed frame" config needed — each tile is standalone.
+  #
+  #   docker compose up --build board
+  board:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        INSTALL_ROSBOARD: "true"
+    image: ridgeback-autonav-sim:board
+    environment:
+      ROS_DOMAIN_ID: "42"
+      RMW_IMPLEMENTATION: rmw_fastrtps_cpp
+    ports:
+      - "8888:8888"   # rosboard web UI
+    stdin_open: true
+    tty: true
+    command:
+      - bash
+      - -c
+      - |
+        source /opt/ros/humble/setup.bash
+        source /ws/install/setup.bash
+        source /opt/rosboard_ws/install/setup.bash
+        ros2 run rosboard rosboard_node &
+        ros2 launch ridgeback_autonav_sim sim.launch.py tf_topic:=/tf tf_static_topic:=/tf_static task:="${TASK:-Go to Room 206}"
+
+  # --- Drive it yourself: teleop + live map (no autonomy) --------------------
+  # Brings up ONLY the simulator + mapping + rosboard (no nav/explorer/mission),
+  # so the keyboard has sole control of the robot. Uses the rosboard image and
+  # mounts the two helper scripts, so no rebuild is needed.
+  #
+  #   docker compose up drive                  # start the world + viewer
+  #   # ...in a second terminal, drive it:
+  #   docker compose exec -it drive python3 /opt/teleop.py
+  #   # ...and watch in a browser: http://localhost:8888
+  #   #    add tiles: /sim_map_live (the world), /map_live (built as you drive), /scan
+  drive:
+    image: ridgeback-autonav-sim:board            # built by `docker compose build board`
+    environment:
+      ROS_DOMAIN_ID: "42"
+      RMW_IMPLEMENTATION: rmw_fastrtps_cpp
+    ports:
+      - "8888:8888"
+    stdin_open: true
+    tty: true
+    volumes:
+      - ./docker/map_republisher.py:/opt/map_republisher.py:ro
+      - ./docker/teleop.py:/opt/teleop.py:ro
+    command:
+      - bash
+      - -c
+      - |
+        source /opt/ros/humble/setup.bash
+        source /ws/install/setup.bash
+        source /opt/rosboard_ws/install/setup.bash
+        PARAMS="$$(ros2 pkg prefix ridgeback_autonav_bringup)/share/ridgeback_autonav_bringup/config/ridgeback.yaml"
+        WORLD="$$(ros2 pkg prefix ridgeback_autonav_sim)/share/ridgeback_autonav_sim/config/sim_world.yaml"
+        ros2 run rosboard rosboard_node &
+        python3 /opt/map_republisher.py &
+        ros2 run ridgeback_autonav_bringup topic_relay --ros-args --params-file "$$PARAMS" &
+        ros2 run ridgeback_autonav_nav mapping_node --ros-args --params-file "$$PARAMS" &
+        ros2 run ridgeback_autonav_sim sim_node --ros-args -p world_file:="$$WORLD" -p camera_enabled:=true
+
+  # --- Ego (first-person) view + live SLAM map, drive it (slam_burger-style) --
+  # One browser tab, two panes: the robot's FIRST-PERSON onboard camera (color
+  # + turbo depth) on the left, and the SLAM occupancy grid that builds up as
+  # you drive on the right (robot pose/heading + live LIDAR overlaid). Drive
+  # with the keyboard straight from the page — no second terminal, no Foxglove.
+  #
+  #   docker compose up --build view   # then open http://localhost:8088
+  #
+  # Runs the camera-enabled sim + topic_relay + mapping_node (so /map fills in)
+  # + nav_server_node (so clicking the map drives the robot there autonomously)
+  # + the embedded web viewer. Uses the lean BASE sim image; the viewer is
+  # mounted, so after editing docker/viz_server.py just restart `view`.
+  view:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: ridgeback-autonav-sim:humble
+    environment:
+      ROS_DOMAIN_ID: "42"
+      RMW_IMPLEMENTATION: rmw_fastrtps_cpp
+    ports:
+      - "8088:8088"
+    stdin_open: true
+    tty: true
+    volumes:
+      - ./docker/viz_server.py:/opt/viz_server.py:ro
+    command:
+      - bash
+      - -c
+      - |
+        source /opt/ros/humble/setup.bash
+        source /ws/install/setup.bash
+        PARAMS="$$(ros2 pkg prefix ridgeback_autonav_bringup)/share/ridgeback_autonav_bringup/config/ridgeback.yaml"
+        WORLD="$$(ros2 pkg prefix ridgeback_autonav_sim)/share/ridgeback_autonav_sim/config/sim_world.yaml"
+        python3 /opt/viz_server.py &
+        ros2 run ridgeback_autonav_bringup topic_relay --ros-args --params-file "$$PARAMS" &
+        ros2 run ridgeback_autonav_nav mapping_node --ros-args --params-file "$$PARAMS" &
+        ros2 run ridgeback_autonav_nav nav_server_node --ros-args --params-file "$$PARAMS" &
+        ros2 run ridgeback_autonav_sim sim_node --ros-args -p world_file:="$$WORLD" -p camera_enabled:=true
+
+  # --- RL / world-model training environment (ROS-free Gymnasium env) --------
+  # Builds the sim image with Gymnasium so the in-process env RidgebackAutoNav-v1
+  # (src/ridgeback_autonav_sim/ridgeback_autonav_sim/rl_env.py) is importable. The env reuses the sim core
+  # (world + LIDAR raycast + perspective camera) WITHOUT ROS, so it steps at
+  # ~1k steps/s. Task: drive to a room sign and face it ("go read room N").
+  #
+  #   docker compose run --rm rl                       # env smoke test
+  #   docker compose run --rm rl python3 -c \
+  #     "import ridgeback_autonav_sim.rl_env as M; M.register(); import gymnasium as g; \
+  #      e=g.make('RidgebackAutoNav-v1'); print(e.observation_space)"
+  #   # to train (installs torch first, ~2 GB):
+  #   docker compose run --rm rl bash -lc \
+  #     'pip3 install "stable-baselines3[extra]" && python3 /opt/rl_train.py --steps 200000'
+  rl:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        INSTALL_RL: "true"
+    image: ridgeback-autonav-sim:rl
+    environment:
+      RIDGEBACK_AUTONAV_WORLD: /ws/install/ridgeback_autonav_sim/share/ridgeback_autonav_sim/config/sim_world.yaml
+    stdin_open: true
+    tty: true
+    volumes:
+      - ./docker/rl_train.py:/opt/rl_train.py:ro
+    command: ["python3", "-m", "ridgeback_autonav_sim.rl_env"]
+
+  # --- Real perception variant (optional, heavy) -----------------------------
+  # Builds a separate ~2 GB image with torch + YOLO + PARSeq and runs the real
+  # perception_node against the synthetic camera.
+  #   docker compose --profile perception up --build sim-perception
+  sim-perception:
+    profiles: ["perception"]
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        INSTALL_PERCEPTION: "true"
+    image: ridgeback-autonav-sim:perception
+    environment:
+      ROS_DOMAIN_ID: "42"
+      RMW_IMPLEMENTATION: rmw_fastrtps_cpp
+    stdin_open: true
+    tty: true
+    command: ["ros2", "launch", "ridgeback_autonav_sim", "sim.launch.py", "use_real_perception:=true", "task:=${TASK:-Go to Room 206}"]

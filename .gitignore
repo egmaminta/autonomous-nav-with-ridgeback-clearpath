@@ -1,0 +1,48 @@
+# --- ROS 2 / colcon build artifacts ---
+build/
+install/
+log/
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+*.egg
+.eggs/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# --- Virtual environments ---
+.venv/
+venv/
+env/
+.python-version
+
+# --- Saved maps (runtime crash-recovery output; not source) ---
+ridgeback_autonav_maps/
+*.npy
+maps/*.pgm
+
+# --- Model weights / large binaries (downloaded to caches at runtime) ---
+*.pt
+*.pth
+*.onnx
+*.engine
+
+# --- Editor / OS cruft ---
+.vscode/
+.idea/
+*.swp
+*~
+.DS_Store
+
+# --- ROS bags ---
+*.bag
+*.db3
+*.mcap
+rosbag2_*/
+
+# Kept local only, not published to the remote
+docs/KNOWN_ISSUES.md

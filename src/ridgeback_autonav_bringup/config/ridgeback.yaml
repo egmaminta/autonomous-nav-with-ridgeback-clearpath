@@ -1,0 +1,253 @@
+# =============================================================================
+# ridgeback_autonav stack parameters for the Clearpath Ridgeback R100 (omnidirectional).
+# One file, one section per node. Loaded by bringup.launch.py.
+#
+# Topic conventions (after topic_relay):
+#   /scan   <- /r100_0140/sensors/lidar2d_0/scan   (LaserScan)
+#   /odom   <- /r100_0140/platform/odom/filtered   (Odometry, EKF)
+#   cmd_vel  -> /r100_0140/cmd_vel                  (Twist, holonomic)
+#   camera color/depth/info: consumed directly by perception (single subscriber)
+#
+# Frames: map -> odom -> base_link -> {lidar2d_0_laser, camera_0_color_optical_frame}
+# Robot:  radius 0.43 m, footprint ~0.96 x 0.79 m, laser +0.42 m x from base_link.
+# =============================================================================
+
+/topic_relay:
+  ros__parameters:
+    relays:
+      - "/r100_0140/sensors/lidar2d_0/scan|/scan|sensor_msgs/msg/LaserScan"
+      - "/r100_0140/platform/odom/filtered|/odom|nav_msgs/msg/Odometry"
+
+/mapping_node:
+  ros__parameters:
+    scan_topic: "/scan"
+    odom_topic: "/odom"
+    map_topic: "/map"
+    pose_topic: "/pose"
+    map_frame: "map"
+    odom_frame: "odom"
+    base_frame: "base_link"
+    laser_frame: "lidar2d_0_laser"
+    laser_offset_x: 0.42      # Hokuyo mounted +0.42 m x from base_link
+    # Grid
+    resolution: 0.05          # m / cell
+    initial_size_m: 30.0      # square side; grows dynamically
+    max_range: 10.0           # Hokuyo UST-10LX effective range (m)
+    min_range: 0.10
+    log_odds_occ: 1.4
+    log_odds_free: -0.35
+    log_odds_min: -5.0
+    log_odds_max: 5.0
+    occ_threshold: 0.65       # P(occ) above this -> occupied cell (100)
+    free_threshold: 0.25      # P(occ) below this -> free cell (0); between -> unknown (-1)
+    # Rear blind arc kept UNKNOWN (not cleared to free)
+    blind_arc_enabled: true
+    blind_arc_center_deg: 180.0
+    blind_arc_half_width_deg: 45.0
+    # Scan matching (our own correlative matcher; map->odom correction)
+    use_scan_matching: true
+    min_trans: 0.05           # keyframe gate (m)
+    min_rot: 0.05             # keyframe gate (rad)
+    search_window_xy: 0.10    # +/- search (m)
+    search_step_xy: 0.025
+    search_window_theta: 0.08 # +/- search (rad)
+    search_step_theta: 0.02
+    match_min_score: 0.30     # reject weak matches; fall back to odom
+    max_match_beams: 180      # subsample scan for matcher speed
+    # Publishing
+    map_publish_period: 1.0   # s
+    tf_publish_period: 0.05   # s (20 Hz map->odom)
+    # Persistence
+    save_dir: "~/ridgeback_autonav_maps"
+    save_period: 5.0          # s; also saved on shutdown
+    scan_max_age: 0.5         # s; warn if scans go stale
+
+/nav_server_node:
+  ros__parameters:
+    scan_topic: "/scan"
+    map_topic: "/map"
+    cmd_vel_topic: "/r100_0140/cmd_vel"
+    plan_topic: "/plan"
+    map_frame: "map"
+    base_frame: "base_link"
+    laser_frame: "lidar2d_0_laser"
+    laser_offset_x: 0.42
+    # Footprint / costmap
+    robot_radius: 0.43
+    inflation_radius: 0.75           # global paths PREFER staying off walls (soft
+    inflation_radius_explore: 0.60   #   cost beyond robot_radius; doorways stay passable)
+    # safety_margin is a HARD DWA block at robot_radius+margin. Keep it SMALL so
+    # the robot can still fit through tight (~1 m) doorways; the real "stay off
+    # walls" behavior comes from w_clearance (soft) + inflation, not this.
+    safety_margin: 0.05
+    # hard_stop fires only when something is essentially at the footprint edge
+    # (< robot_radius) -> last-resort back-off; must be < robot_radius+safety_margin
+    # so it never blocks legitimate tight passages.
+    hard_stop_distance: 0.40
+    hard_stop_speed: 0.12            # m/s back-off speed
+    # No-go zones: map-frame polygons the robot must avoid (e.g. glass walls the
+    # LIDAR can't see). Each entry is "x1 y1 x2 y2 x3 y3 ..." (>=3 vertices).
+    # Example: a glass wall rectangle ->  - "9.5 3.0 10.5 3.0 10.5 5.0 9.5 5.0"
+    no_go_zones: []
+    unknown_cost: 100.0              # mission planning: avoid unknown
+    unknown_cost_explore: 5.0        # exploration: traverse unknown cheaply
+    lethal_cost: 254.0
+    # Planner (A*)
+    allow_diagonal: true
+    replan_period: 1.0               # s
+    # Holonomic DWA local controller
+    control_period: 0.1              # s (10 Hz)
+    # Smooth, driver-like motion. linear cap 0.15 m/s. vy (strafe) is only used
+    # near obstacles (open-space travel forces vy=0 -> no crabbing).
+    max_vx: 0.15
+    max_vy: 0.10
+    max_wz: 0.4
+    acc_vx: 0.6
+    acc_vy: 0.5
+    acc_wz: 1.2
+    vx_samples: 7
+    vy_samples: 5
+    wz_samples: 11
+    sim_time: 1.5                    # s trajectory rollout
+    sim_dt: 0.1
+    w_path: 2.0                      # progress toward path
+    w_goal: 1.5                      # heading-to-goal
+    w_clearance: 1.6                 # obstacle clearance (raised: prefer staying off walls)
+    w_heading: 0.5                   # drive-like: turn to face the target before going
+    w_strafe: 0.6                    # extra strafe penalty (only relevant near obstacles)
+    w_smooth: 0.5                    # velocity smoothness (raised: smoother commands)
+    cmd_smoothing: 0.35              # output velocity EMA factor (0=off, lower=smoother)
+    path_smooth_iters: 2             # Chaikin corner-cutting passes on the global path
+    lookahead_distance: 0.8          # m along path for carrot
+    # Terminal precise approach (settles cleanly within a tight tolerance)
+    approach_radius: 0.6             # m; inside this, servo straight to goal (no DWA/EMA)
+    approach_kp: 0.6                 # proportional gain for the terminal servo
+    # Holonomic-enable distance: reverse AND sideways strafe are allowed only
+    # when an obstacle is within this range (tight-spot escape). Beyond it the
+    # robot is forward+turn only (turn-then-go like a driver, no crabbing).
+    reverse_threshold: 0.6
+    # Tolerances
+    xy_tolerance: 0.20
+    yaw_tolerance: 0.10
+    # Watchdogs / recovery
+    scan_max_age: 1.0                # s; stale -> stop. The LIDAR feed (16 Hz avg)
+                                     # has sporadic ~0.7-1.6 s SOURCE-side gaps
+                                     # (network/robot-PC, not the relay), so a tight
+                                     # bound stalls motion. 1.0 s rides over typical
+                                     # gaps; DWA still avoids the last-seen obstacles.
+                                     # Real fix is the LIDAR link (see project memory).
+    progress_timeout: 6.0            # s of no progress -> recovery
+    goal_timeout: 120.0              # s per goal -> abort
+    max_recoveries: 4
+    recovery_rotate_speed: 0.4
+    recovery_strafe_speed: 0.2
+    recovery_backup_speed: 0.15
+    recovery_step_time: 2.0
+
+/explorer_node:
+  ros__parameters:
+    map_topic: "/map"
+    map_frame: "map"
+    base_frame: "base_link"
+    process_period: 1.0              # s
+    min_frontier_size: 8             # cells
+    cluster_radius_cells: 2
+    max_frontier_range: 12.0         # m; cap during early exploration
+    min_frontier_range: 0.6         # m; ignore frontiers under the robot
+    # Frontier utility = w_info*infogain + w_size*size + w_camera*cam_vis
+    #                    - w_cost*dist - w_turn*turn.
+    # Information gain (unmapped area revealed) is the primary driver, so the
+    # robot heads where it learns the most map, not just the biggest sliver.
+    w_info: 1.0                      # per 100 unknown cells revealed (info gain)
+    w_size: 0.3                      # per 10 frontier cells
+    w_cost: 0.5                      # per metre of travel
+    w_turn: 0.3                      # per rad of heading change (mild face bias)
+    info_gain_radius: 2.0            # m; radius for counting revealed unknown area
+    # Camera-guided bias: prefer frontiers whose approach heading aims the
+    # (forward-facing) camera at walls, where room-number signs live, so signs
+    # get read during exploration instead of by luck. Scored as the fraction of
+    # the camera FOV that meets a wall within camera_range when driving at the
+    # frontier (frontier.camera_visibility).
+    w_camera: 0.6                    # weight on the [0,1] wall-in-FOV fraction
+    camera_fov_deg: 70.0             # D435 colour horizontal FOV (~69 deg)
+    camera_range: 4.0                # m; effective sign-reading distance
+    camera_rays: 9                   # rays across the FOV (raycast resolution)
+    blacklist_radius: 0.7            # m; goals within this of a failed one are skipped
+    blacklist_ttl: 60.0             # s
+    hysteresis_radius: 0.5           # m
+    no_growth_timeout: 12.0          # s; no map growth -> blacklist current goal
+    complete_debounce: 5.0           # s of zero frontiers -> EXPLORE_COMPLETE
+    goal_xy_tolerance: 0.30
+    goal_yaw_tolerance: 1.57         # heading doesn't matter much for frontiers
+
+/perception_node:
+  ros__parameters:
+    # realsense2_camera (driven on the Jetson) topic names; depth is ALIGNED to
+    # color so a color-pixel bbox indexes the right depth. uint16 mm -> auto-detected.
+    color_topic: "/r100_0140/sensors/camera_0/color/image_raw"
+    depth_topic: "/r100_0140/sensors/camera_0/aligned_depth_to_color/image_raw"
+    camera_info_topic: "/r100_0140/sensors/camera_0/color/camera_info"
+    camera_optical_frame: "camera_0_color_optical_frame"
+    map_frame: "map"
+    registry_topic: "/sign_registry"
+    sync_slop: 0.08                  # s; ApproximateTimeSynchronizer
+    # Text detector backend: 'doctr' (DBNet — proper printed/scene-text detector,
+    # what slam_burger v2 uses; clean word boxes) or 'yolo' (fallback). DocTR +
+    # per-word PARSeq + line-merge reads printed room signs far better than the
+    # handwritten-text YOLO (which fragmented signs / false-positived on clutter).
+    detector_backend: "doctr"
+    doctr_arch: "db_mobilenet_v3_large"
+    doctr_input_size: 512            # 0 = doctr default 1024 (slower)
+    min_text_confidence: 0.3         # combined sqrt(det*rec) gate per word
+    # --- YOLO fallback (detector_backend: yolo) ---
+    yolo_weights: "armvectores/yolov8n_handwritten_text_detection"
+    yolo_hf_filename: "best.pt"
+    yolo_conf: 0.35
+    yolo_iou: 0.45
+    yolo_imgsz: 640
+    yolo_device: "cuda:0"            # "cpu" fallback
+    # Merge fragmented detections into one region per sign (so PARSeq reads the
+    # whole "RM 205"), and drop specks / whole-wall regions.
+    yolo_merge: true
+    yolo_merge_gap: 20.0             # px; union boxes whose rects are within this
+    yolo_min_area: 200.0             # px^2; drop tiny noise detections
+    yolo_max_area_frac: 0.4          # drop merged regions bigger than this frac of frame
+    detect_period: 0.3               # s; throttle inference
+    crop_pad: 0.10                   # fraction of bbox to pad before recognition
+    # PARSeq recognizer
+    parseq_hub: "baudm/parseq"
+    parseq_model: "parseq"
+    parseq_min_conf: 0.5
+    # Room-number filter: pull the 2-4 digit run even when glued to letters,
+    # so PARSeq reading "RM205" / "RM 205" / "205" all yield "205".
+    room_regex: "\\d{2,4}[A-Za-z]?"
+    # Depth -> map projection
+    depth_is_mm: false               # true if uint16 millimetres; false if float32 metres
+    depth_min: 0.3
+    depth_max: 8.0
+    depth_window: 7                  # px; central median window over bbox
+    depth_min_valid: 10              # min valid samples in window
+    # Multi-observation confirmation
+    cluster_radius: 0.75             # m; same text within this radius == same sign
+    min_observations: 3
+    max_spread: 0.30                 # m; confirmation tightness (<< cluster_radius)
+    position_ema: 0.4                # EMA factor for refining position
+
+/mission_node:
+  ros__parameters:
+    map_frame: "map"
+    base_frame: "base_link"
+    registry_topic: "/sign_registry"
+    get_signs_service: "/get_signs"
+    start_exploration_service: "/start_exploration"
+    status_topic: "/mission_status"
+    nav_action: "/navigate_to_pose"
+    task: "Go to Room 206"
+    use_llm_parser: false            # regex first; LLM only as offline fallback
+    standoff_distance: 1.0           # m; stop this far from the sign, facing it
+    confirm_frames: 5                # PARSeq re-reads at the target
+    approach_retries: 2
+    home_xy_tolerance: 0.10
+    home_yaw_tolerance: 0.05
+    mission_timeout: 900.0           # s; hard cap
+    state_poll_period: 0.5           # s

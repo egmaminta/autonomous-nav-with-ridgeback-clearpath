@@ -1,0 +1,111 @@
+# Ground-truth world for the ridgeback_autonav simulator: a corridor with six rooms and
+# room-number signs mounted FLUSH on the corridor walls beside each doorway.
+# Units are metres.
+#
+#  y=8 +------+--D--+------+------+
+#      | 201  |     | 202  |      |   top rooms (D = 1.8 m doorway, centred)
+#  y=5 +--D---+--D--+---D--+------+
+#      |   <----- corridor (start ->) ---->   |
+#  y=3 +--D---+--D--+---D--+------+
+#      | 204  |     | 205  |      |   bottom rooms
+#  y=0 +------+-----+------+------+
+#     x=0                          x=14
+#
+# Doorways are 1.8 m wide (clear opening ~1.68 m after wall thickness), centred
+# on each room (x = 2, 6, 10) so the 0.86 m-diameter robot drives in with margin.
+
+resolution: 0.05
+bounds: [0.0, 0.0, 14.0, 8.0]
+border: true
+wall_thickness: 0.12
+
+walls:
+  # Top corridor wall (y=5): 1.8 m doorways centred at x=2, 6, 10.
+  - [0.0, 5.0, 1.1, 5.0]
+  - [2.9, 5.0, 5.1, 5.0]
+  - [6.9, 5.0, 9.1, 5.0]
+  - [10.9, 5.0, 14.0, 5.0]
+  # Bottom corridor wall (y=3): doorways centred at x=2, 6, 10.
+  - [0.0, 3.0, 1.1, 3.0]
+  - [2.9, 3.0, 5.1, 3.0]
+  - [6.9, 3.0, 9.1, 3.0]
+  - [10.9, 3.0, 14.0, 3.0]
+  # Vertical partitions between top rooms.
+  - [4.0, 5.0, 4.0, 8.0]
+  - [8.0, 5.0, 8.0, 8.0]
+  - [11.0, 5.0, 11.0, 8.0]
+  # Vertical partitions between bottom rooms.
+  - [4.0, 0.0, 4.0, 3.0]
+  - [8.0, 0.0, 8.0, 3.0]
+  - [11.0, 0.0, 11.0, 3.0]
+
+# Signs are mounted FLUSH on the corridor face of each wall, beside the doorway.
+#   x, y    = plaque centre (y just proud of the wall surface so it renders on it)
+#   z       = mounting height. Kept near the 0.6 m camera height (diff < 0.43 m)
+#             so a sign on the OPPOSITE 2 m-wide corridor wall fits the camera's
+#             +/-24.6 deg vertical FOV when the robot turns to face it head-on.
+#   yaw_deg = wall-normal heading (270 = faces -y into corridor for the TOP wall;
+#             90 = faces +y for the BOTTOM wall). The renderer perspective-warps
+#             the plaque from this orientation, so off-axis views foreshorten and
+#             only a head-on view looks "straightened".
+#   w, h    = plaque size (m)
+signs:
+  - {text: "201", x: 3.3, y: 4.90, z: 1.0, yaw_deg: 270, w: 0.6, h: 0.30}
+  - {text: "202", x: 7.3, y: 4.90, z: 1.0, yaw_deg: 270, w: 0.6, h: 0.30}
+  - {text: "203", x: 8.5, y: 4.90, z: 1.0, yaw_deg: 270, w: 0.6, h: 0.30}
+  - {text: "204", x: 3.3, y: 3.10, z: 1.0, yaw_deg: 90,  w: 0.6, h: 0.30}
+  - {text: "205", x: 7.3, y: 3.10, z: 1.0, yaw_deg: 90,  w: 0.6, h: 0.30}
+  - {text: "206", x: 8.5, y: 3.10, z: 1.0, yaw_deg: 90,  w: 0.6, h: 0.30}
+
+# Static furniture/objects, themed per room (classroom, research lab, meeting
+# room, office). Each is rasterized into the same occupancy grid as the walls,
+# so it shows up in the LIDAR scan, the onboard camera (in its own colour and at
+# its own height, seen when the robot turns toward a doorway), and in collision.
+#   type   = box (needs w, h footprint, optional yaw_deg) or circle (needs r)
+#   x, y   = centre (m); height = how tall it stands (m); color = [r, g, b] 0..255
+# Kept toward the back of each room, clear of the doorways and the corridor path.
+obstacles:
+  # room 201 -- classroom: two desks with chairs
+  - {type: box,    x: 1.2, y: 7.00, w: 1.0, h: 0.50, height: 0.75, color: [150, 110, 70]}
+  - {type: box,    x: 1.2, y: 7.65, w: 0.4, h: 0.35, height: 0.85, color: [60, 60, 75]}
+  - {type: box,    x: 2.9, y: 7.00, w: 1.0, h: 0.50, height: 0.75, color: [150, 110, 70]}
+  - {type: box,    x: 2.9, y: 7.65, w: 0.4, h: 0.35, height: 0.85, color: [60, 60, 75]}
+  # room 202 -- research lab: bench, two stools, tall equipment
+  - {type: box,    x: 6.0, y: 7.30, w: 2.6, h: 0.55, height: 0.90, color: [120, 125, 135]}
+  - {type: circle, x: 5.3, y: 6.50, r: 0.22, height: 0.60, color: [80, 70, 70]}
+  - {type: circle, x: 6.7, y: 6.50, r: 0.22, height: 0.60, color: [80, 70, 70]}
+  - {type: box,    x: 7.3, y: 6.60, w: 0.5, h: 0.50, height: 1.50, color: [70, 110, 180]}
+  # room 203 -- meeting room: central table with chairs
+  - {type: box,    x: 9.5, y: 7.00, w: 1.5, h: 0.90, height: 0.75, color: [150, 110, 70]}
+  - {type: circle, x: 9.5, y: 6.30, r: 0.22, height: 0.85, color: [60, 60, 75]}
+  - {type: circle, x: 8.9, y: 7.00, r: 0.22, height: 0.85, color: [60, 60, 75]}
+  - {type: circle, x: 10.1, y: 7.00, r: 0.22, height: 0.85, color: [60, 60, 75]}
+  # room 204 -- office: desk, chair, tall shelf
+  - {type: box,    x: 1.2, y: 1.00, w: 1.1, h: 0.55, height: 0.75, color: [150, 110, 70]}
+  - {type: box,    x: 1.2, y: 0.50, w: 0.4, h: 0.35, height: 0.85, color: [60, 60, 75]}
+  - {type: box,    x: 3.2, y: 1.00, w: 0.5, h: 1.40, height: 1.70, color: [100, 100, 110]}
+  # room 205 -- lab: bench, cabinet, stool
+  - {type: box,    x: 6.0, y: 0.80, w: 2.6, h: 0.55, height: 0.90, color: [120, 125, 135]}
+  - {type: box,    x: 4.6, y: 1.60, w: 0.5, h: 0.80, height: 1.60, color: [90, 90, 105]}
+  - {type: circle, x: 6.0, y: 1.60, r: 0.22, height: 0.60, color: [80, 70, 70]}
+  # room 206 -- lab/store: bench, crate, plant
+  - {type: box,    x: 9.4, y: 0.80, w: 1.6, h: 0.55, height: 0.90, color: [120, 125, 135]}
+  - {type: box,    x: 10.3, y: 1.60, w: 0.5, h: 0.50, yaw_deg: 20, height: 0.60, color: [150, 150, 70]}
+  - {type: circle, x: 8.7, y: 1.60, r: 0.30, height: 1.30, color: [70, 160, 80]}
+  # hallway, far end (past every room/sign so it never blocks the path)
+  - {type: circle, x: 12.2, y: 3.60, r: 0.28, height: 1.30, color: [70, 160, 80]}
+  - {type: box,    x: 12.6, y: 4.60, w: 1.2, h: 0.30, height: 0.45, color: [140, 100, 60]}
+
+# Robot start for manual driving and as the fallback pose (left end of the
+# corridor, facing +x). The RL env samples its start from spawn_regions below.
+start: {x: 0.8, y: 4.0, theta: 0.0}
+
+# Room interiors the RL env spawns the robot in, so the agent has to drive out
+# of a room and down the corridor to read a sign. [xlo, ylo, xhi, yhi] in metres.
+spawn_regions:
+  - [0.6, 5.6, 3.4, 7.4]    # room 201
+  - [4.6, 5.6, 7.4, 7.4]    # room 202
+  - [8.6, 5.6, 10.4, 7.4]   # room 203
+  - [0.6, 0.6, 3.4, 2.4]    # room 204
+  - [4.6, 0.6, 7.4, 2.4]    # room 205
+  - [8.6, 0.6, 10.4, 2.4]   # room 206

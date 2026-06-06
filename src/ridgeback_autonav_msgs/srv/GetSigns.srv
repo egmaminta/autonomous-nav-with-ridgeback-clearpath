@@ -1,0 +1,4 @@
+# Request: pull the current sign registry on demand (fixes the old racy cache).
+bool confirmed_only          # true -> return only confirmed signs
+---
+SignDetection[] signs

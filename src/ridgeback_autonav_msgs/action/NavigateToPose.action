@@ -1,0 +1,15 @@
+# Goal: drive the robot to a target pose in the map frame.
+geometry_msgs/PoseStamped target_pose
+bool exploration_mode      # true -> cheaper unknown-cell cost, relaxed inflation
+float32 xy_tolerance       # 0.0 -> use node default
+float32 yaw_tolerance      # 0.0 -> use node default
+---
+# Result
+bool success
+uint8 error_code           # 0 ok, 1 no_plan, 2 stuck, 3 timeout, 4 canceled, 5 collision
+string message
+---
+# Feedback
+geometry_msgs/PoseStamped current_pose
+float32 distance_remaining
+string state               # PLANNING | FOLLOWING | RECOVERING

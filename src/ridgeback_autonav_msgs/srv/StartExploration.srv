@@ -1,0 +1,5 @@
+# Request: start or stop frontier exploration.
+bool start                   # true = start, false = stop
+---
+bool ok
+string message

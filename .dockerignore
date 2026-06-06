@@ -1,0 +1,41 @@
+# Keep the build context tiny — the local .venv (torch et al.) is multiple GB.
+.venv/
+.git/
+.gitignore
+
+# ROS 2 / colcon build artifacts (rebuilt inside the image)
+build/
+install/
+log/
+
+# Python caches
+**/__pycache__/
+**/*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Runtime output / weights / bags (downloaded or generated at run time)
+ridgeback_autonav_maps/
+*.pt
+*.pth
+*.onnx
+*.engine
+*.bag
+*.db3
+*.mcap
+rosbag2_*/
+
+# Editor / OS cruft
+.vscode/
+.idea/
+*.swp
+*~
+.DS_Store
+
+# Docker meta (not needed inside the image)
+Dockerfile
+.dockerignore
+docker-compose.yml
+README.md
